@@ -79,6 +79,6 @@ main(int argc, char *argv[]) {
         exit(1);
     }
 
-    printf("i am here\n");
+    // printf("i am here\n");
     exit(0);
 }
