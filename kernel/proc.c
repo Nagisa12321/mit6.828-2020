@@ -693,3 +693,10 @@ procdump(void)
     printf("\n");
   }
 }
+
+// trace the system call 
+int
+trace(int mask) {
+    printf("trace(int mask)\n ");
+    return 1;
+}
