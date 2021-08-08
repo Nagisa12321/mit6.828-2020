@@ -104,3 +104,12 @@ sys_trace(void) {
     return -1;
   return trace(mask);
 }
+
+// system infomation
+uint64
+sys_sysinfo(void) {
+  uint64 info; // user pointer to sysinfo
+  if(argaddr(0, &info) < 0)
+    return -1;
+  return sysinfo(info);
+}

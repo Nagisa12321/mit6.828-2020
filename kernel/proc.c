@@ -4,6 +4,7 @@
 #include "riscv.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 #include "defs.h"
 
 struct cpu cpus[NCPU];
@@ -705,8 +706,42 @@ procdump(void)
 // trace the system call 
 int
 trace(int mask) {
-    // printf("trace(%d)\n", mask);
-    syscall_num = mask;
-    syscall_pid = myproc()->pid;
-    return 0;
+  // printf("trace(%d)\n", mask);
+  syscall_num = mask;
+  syscall_pid = myproc()->pid;
+  return 0;
+}
+
+uint64
+getnproc() {
+  struct proc     *p;
+  uint64          procs;
+
+  procs = 0;
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state != UNUSED) 
+      ++procs;
+    release(&p->lock);
+  }
+  return procs;
+}
+
+
+// system information
+int 
+sysinfo(uint64 usraddr) {
+  // the kernel info
+  struct sysinfo    info;
+  struct proc       *p;
+
+  p = myproc();
+  // write to the kernel info
+  info.freemem = getfreemem();
+  info.nproc = getnproc();
+
+  // put to the user mode
+  if(copyout(p->pagetable, usraddr, (char *)&info, sizeof(info)) < 0)
+      return -1;
+  return 0;
 }
