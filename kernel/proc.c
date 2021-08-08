@@ -21,6 +21,9 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+extern int syscall_num;   // system call's number
+extern int syscall_pid;   // system call's pid
+
 // initialize the proc table at boot time.
 void
 procinit(void)
@@ -385,6 +388,11 @@ exit(int status)
   p->xstate = status;
   p->state = ZOMBIE;
 
+  if (p->pid == syscall_pid) {
+    syscall_num = 0;
+    syscall_pid = 0;
+  }
+
   release(&original_parent->lock);
 
   // Jump into the scheduler, never to return.
@@ -697,6 +705,8 @@ procdump(void)
 // trace the system call 
 int
 trace(int mask) {
-    printf("trace(int mask)\n ");
-    return 1;
+    // printf("trace(%d)\n", mask);
+    syscall_num = mask;
+    syscall_pid = myproc()->pid;
+    return 0;
 }

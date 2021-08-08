@@ -99,5 +99,8 @@ sys_uptime(void)
 // trace the system call 
 uint64
 sys_trace(void) {
-  return trace(10086);
+  int mask;
+  if(argint(0, &mask) < 0)
+    return -1;
+  return trace(mask);
 }
