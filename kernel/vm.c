@@ -440,3 +440,40 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+// print the pagetable's pte and pa
+// which pte is PTE_V
+void
+vmprint(pagetable_t pagetable) {
+  pte_t         *pte;
+  uint64        pa;
+  pagetable_t   pt2, pt3;
+  uint64        p1, p2, p3;
+
+  printf("page table %p\n", pagetable);
+  for (p1 = 0; p1 < 512; ++p1) {
+    pte = &pagetable[p1];
+    pa = PTE2PA(*pte);
+
+    if (PTE_FLAGS(*pte) & PTE_V) {
+      pt2 = (pagetable_t) pa;
+      printf("..%d: pte %p pa %p\n", p1, *pte, pa);
+
+      for (p2 = 0; p2 < 512; ++p2) {
+        pte = &pt2[p2];
+        pa = PTE2PA(*pte);
+
+        if (PTE_FLAGS(*pte) & PTE_V) {
+          pt3 = (pagetable_t) pa;
+          printf(".. ..%d: pte %p pa %p\n", p2, *pte, pa);
+          for (p3 = 0; p3 < 512; ++p3) {
+            pte = &pt3[p3];
+            pa = PTE2PA(*pte);
+            if (PTE_FLAGS(*pte) & PTE_V) 
+              printf(".. .. ..%d: pte %p pa %p\n", p3, *pte, pa);
+          }
+        }
+      }
+    }
+  }
+}
