@@ -60,6 +60,9 @@ usertrap(void)
     // but we want to return to the next instruction.
     p->trapframe->epc += 4;
 
+    // make satp
+    uvminithart(p->kernel_pagetable);
+
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
     intr_on();

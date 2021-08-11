@@ -1,0 +1,11 @@
+Explain the output of vmprint in terms of Fig 3-4 from the text. 
+
+What does page 0 contain? 
+- maybe the process's text
+
+What is in page 2? 
+
+When running in user mode,
+ could the process read/write the memory mapped by page 1?
+
+- no.

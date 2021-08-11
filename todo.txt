@@ -1,0 +1,18 @@
+I think some shit to do is: 
+
+1. make a kernel page tab when make a new proc.
+2. when sys_call, just mix the kernel page tab and the 
+    user page tab => p->kernel_pagetab (I think is simply copy)
+
+    now in the kernel mode, you can just use the user mode pointer. 
+
+3. but out of the sys_call/switch to another proc, what should i do
+- when sys_call: mix the user page table and the kernel page table 
+    to proc => kernel_pagetab, and set the satp, so that can diretly 
+    use the user memory.
+- when switch to / in the scheduler: save the change to the kernel kernel_pagetab.
+    copy the kernel page table to the new proc. 
+- when out of the sys_call, save the proc->kernel_pagetab to real kernel page table
+
+
+and remember to free old kstack when free a proc
