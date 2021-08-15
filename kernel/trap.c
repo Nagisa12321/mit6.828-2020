@@ -49,6 +49,9 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
+
+  // make satp
+  uvminithart(p->kernel_pagetable);
   
   if(r_scause() == 8){
     // system call
@@ -59,9 +62,6 @@ usertrap(void)
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
     p->trapframe->epc += 4;
-
-    // make satp
-    uvminithart(p->kernel_pagetable);
 
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.

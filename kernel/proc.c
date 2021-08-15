@@ -75,6 +75,38 @@ allocpid() {
   return pid;
 }
 
+pagetable_t proc_kernel_pagetable(struct proc *p) {
+  pagetable_t pagetable = uvmcreate();
+  if (pagetable == 0) {
+    return 0;
+  }
+
+  return pagetable;
+}
+
+void 
+freekstack(struct proc *p) {
+  // free the kstack (user)
+  pte_t *pte = walk(p->kernel_pagetable, p->kstack, 0);
+  if (pte == 0)
+    panic("freekstack: free the kstack");
+  kfree((void *) PTE2PA(*pte));
+}
+
+void 
+allockstack(struct proc *p) {
+  // Allocate a page for the process's kernel stack.
+  // Map it high in memory, followed by an invalid
+  // guard page.
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int) (p - proc));
+  p->kstack = va;
+  // copy the stack in kernel
+  uvmmap(p->kernel_pagetable, va, (uint64) pa, PGSIZE, PTE_R | PTE_W);
+}
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -111,28 +143,16 @@ found:
     return 0;
   }
 
-  // empty usr kernel page tab
-  p->kernel_pagetable = uvmcreate();
-  if (p->kernel_pagetable == 0) {
+  p->kernel_pagetable = proc_kernel_pagetable(p);
+  if(p->kernel_pagetable == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
   }
+
+  // link to the special addr
+  allockstack(p);  
   ukvminit(p->kernel_pagetable);
-
-  // Allocate a page for the process's kernel stack.
-  // Map it high in memory, followed by an invalid
-  // guard page.
-  char *pa = kalloc();
-  if(pa == 0)
-    panic("kalloc");
-  uint64 va = KSTACK((int) (p - proc));
-  // printf("make a the kernel stack (va=%p)\n", va);
-  p->kstack = va;
-  // printf("%p's kstack's pa -> %p\n", p, pa);
-
-  // copy the stack in kernel
-  uvmmap(p->kernel_pagetable, va, (uint64) pa, PGSIZE, PTE_R | PTE_W);
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -140,6 +160,7 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  
   return p;
 }
 
@@ -152,15 +173,10 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->kstack) 
+    freekstack(p);
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
-  if(p->kstack) {
-    // free the kstack (user)
-    pte_t *pte = walk(p->kernel_pagetable, p->kstack, 0);
-    if (pte == 0)
-      panic("freeproc: free the kstack");
-    kfree((void *) PTE2PA(*pte));
-  }
   if(p->kernel_pagetable) 
     proc_free_kernel_page_table(p->kernel_pagetable);
   p->kstack = 0;
@@ -241,6 +257,20 @@ free_helper(pagetable_t pagetable, int level) {
 void
 proc_free_kernel_page_table(pagetable_t pagetable) {
   free_helper(pagetable, 0);
+
+  // there are 2^9 = 512 PTEs in a page table.
+  // for(int i = 0; i < 512; i++){
+  //   pte_t pte = pagetable[i];
+  //   if((pte & PTE_V)){
+  //     pagetable[i] = 0;
+  //     // this PTE points to a lower-level page table.
+  //     if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+  //       uint64 child = PTE2PA(pte);
+  //       proc_free_kernel_page_table((pagetable_t)child);
+  //     }
+  //   } 
+  // }
+  // kfree((void*)pagetable);
 }
 
 // a user program that calls exec("/init")
@@ -268,6 +298,9 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  // Don't forget that to include the first process's user 
+  // page table in its kernel page table in userinit.
+  ukvmcopy(p->pagetable, p->kernel_pagetable, 0, p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -291,9 +324,14 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    if (PGROUNDUP(sz + n) >= PLIC)
+      // panic("don't grow more than PLIC");
+      return -1;
+
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    ukvmcopy(p->pagetable, p->kernel_pagetable, sz - n, sz);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
@@ -336,6 +374,13 @@ fork(void)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
+
+  // copy parent user page tab to the new process
+  if(ukvmcopy(np->pagetable, np->kernel_pagetable, 0, np->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
@@ -714,7 +759,7 @@ either_copyin(void *dst, int user_src, uint64 src, uint64 len)
 {
   struct proc *p = myproc();
   if(user_src){
-    return copyin(p->pagetable, dst, src, len);
+    return copyin_new(p->pagetable, dst, src, len);
   } else {
     memmove(dst, (char*)src, len);
     return 0;
