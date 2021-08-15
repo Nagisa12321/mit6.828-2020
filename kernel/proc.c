@@ -30,6 +30,14 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
+
+      // Allocate a page for the process's kernel stack.
+      // Map it high in memory, followed by an invalid
+      // guard page.
+      char *pa = kalloc();
+      if(pa == 0)
+        panic("kalloc");
+      p->kstack_pa = (uint64) pa;
   }
   kvminithart();
 }
@@ -98,11 +106,10 @@ allockstack(struct proc *p) {
   // Allocate a page for the process's kernel stack.
   // Map it high in memory, followed by an invalid
   // guard page.
-  char *pa = kalloc();
-  if(pa == 0)
-    panic("kalloc");
+  uint64 pa = p->kstack_pa;
   uint64 va = KSTACK((int) (p - proc));
   p->kstack = va;
+
   // copy the stack in kernel
   uvmmap(p->kernel_pagetable, va, (uint64) pa, PGSIZE, PTE_R | PTE_W);
 }
@@ -173,8 +180,8 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->kstack) 
-    freekstack(p);
+  // if(p->kstack) 
+  //   freekstack(p);
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   if(p->kernel_pagetable) 
