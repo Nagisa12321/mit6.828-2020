@@ -132,3 +132,19 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+void backtrace() {
+  uint64        fp;
+  struct proc   *p;
+  
+  fp = r_fp();
+  p = myproc();
+  printf("backtrace:\n");
+
+  printf("p->kstack = %x\n", p->kstack);
+  printf("p->trapframe->kernel_sp = %x\n", p->trapframe->kernel_sp);
+  printf("0x%x\n", fp);
+  // while (1) {
+
+  // }
+}
