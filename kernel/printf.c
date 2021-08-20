@@ -140,11 +140,10 @@ void backtrace() {
   fp = r_fp();
   p = myproc();
   printf("backtrace:\n");
-
-  printf("p->kstack = %x\n", p->kstack);
-  printf("p->trapframe->kernel_sp = %x\n", p->trapframe->kernel_sp);
-  printf("0x%x\n", fp);
-  // while (1) {
-
-  // }
+  while (1) {
+    if (fp == p->trapframe->kernel_sp)
+      break;
+    printf("%p\n",*(uint64 *) (fp - 8));
+    fp = *(uint64 *) (fp - 16);
+  }
 }
