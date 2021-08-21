@@ -77,8 +77,25 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2) {
+    if (p->alarm) {
+      if (p->alarm->ret) {
+        p->alarm->count -= 1;
+        if (p->alarm->count == 0) {
+          p->alarm->count = p->alarm->ticks;
+        
+          // save the user trapframe here
+          p->trapframe_saved = kalloc();
+          *p->trapframe_saved = *p->trapframe;
+          
+          // make the pc point to the func
+          p->alarm->ret = 0;
+          p->trapframe->epc = p->alarm->user_func;
+        }
+      }
+    }
     yield();
+  }
 
   usertrapret();
 }

@@ -99,8 +99,19 @@ struct proc {
   uint64 sz;                   // Size of process memory (bytes)
   pagetable_t pagetable;       // User page table
   struct trapframe *trapframe; // data page for trampoline.S
+  struct trapframe *trapframe_saved; // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
+  struct alarm *alarm;         // proc's intterput.
   char name[16];               // Process name (debugging)
+};
+
+// user interrupt
+struct alarm {
+  uint64 user_func;            // user's function' va 
+  int ticks;                   // call this func per ticks
+  int count;                   // if count == 0 then call .
+  int delete;                  // this alarm have been delete
+  volatile int ret;            // is the handler return ? 
 };
