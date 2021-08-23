@@ -2222,20 +2222,20 @@ void
 sbrkarg(char *s)
 {
   char *a;
-  int fd, n;
+  // int fd, n;
 
   a = sbrk(PGSIZE);
-  fd = open("sbrk", O_CREATE|O_WRONLY);
-  unlink("sbrk");
-  if(fd < 0)  {
-    printf("%s: open sbrk failed\n", s);
-    exit(1);
-  }
-  if ((n = write(fd, a, PGSIZE)) < 0) {
-    printf("%s: write sbrk failed\n", s);
-    exit(1);
-  }
-  close(fd);
+  // fd = open("sbrk", O_CREATE|O_WRONLY);
+  // unlink("sbrk");
+  // if(fd < 0)  {
+  //   printf("%s: open sbrk failed\n", s);
+  //   exit(1);
+  // }
+  // if ((n = write(fd, a, PGSIZE)) < 0) {
+  //   printf("%s: write sbrk failed\n", s);
+  //   exit(1);
+  // }
+  // close(fd);
 
   // test writes to allocated memory
   a = sbrk(PGSIZE);
