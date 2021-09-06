@@ -29,6 +29,55 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+// this va is the parent/chilren shared
+// I shoud do 
+// 1. call kalloc() to alloc a free page,
+//    and map to the va of pagetable.
+// 2. should find the old PTE to make it PTE_W
+//    and also the new PTE should be PTE_W
+// 
+// if success, return 0, else return -1;
+int 
+pagefault(pagetable_t pagetable, uint64 va) {
+  char      *pa;
+  uint64    old_pa;
+  pte_t     *old_pte;
+  uint      flags;
+  
+  // alloc a free page.
+  pa = kalloc();
+  if (pa == 0) {
+    return -1;
+  }
+
+  // find the old PTE
+  old_pte = walk(pagetable, va, 0);
+  if (old_pte == 0) 
+    panic("pagefault(): old PTE should not be null");
+
+  if (!(*old_pte & PTE_COW))
+    return -1;
+    
+  // make the old pte writeable
+  *old_pte = ((*old_pte) | PTE_W) & (~PTE_COW);
+
+  // copy the mem from old pa to the pa.
+  old_pa = PTE2PA(*old_pte);
+  memmove(pa, (char *)old_pa, PGSIZE);
+
+  // free the old pa
+  // may be it will just decrease.
+  kfree((void *) old_pa);
+
+  // make the new flag is writeable too...
+  flags = PTE_FLAGS(*old_pte);
+  
+  // map the pa.
+  *old_pte = PA2PTE(pa) | flags | PTE_V;
+
+  return 0;
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -67,6 +116,13 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 0xf) {
+    uint64 va = r_stval();
+    pagetable_t pagetable = p->pagetable;
+    if (pagefault(pagetable, va) == -1) {
+      // panic("usertrap(): deal with page fault error\n");
+      p->killed = 1;
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

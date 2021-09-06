@@ -107,6 +107,9 @@ walkaddr(pagetable_t pagetable, uint64 va)
     return 0;
   if((*pte & PTE_U) == 0)
     return 0;
+  if ((*pte | (~PTE_W)) && (*pte & PTE_COW))
+    if (pagefault(pagetable, va) != 0)
+      return 0;
   pa = PTE2PA(*pte);
   return pa;
 }
@@ -156,8 +159,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
-      panic("remap");
+    // if(*pte & PTE_V)
+    //   panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -311,28 +314,29 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
+  // 'i' is the va.
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+
+    // increament the pa map
+    // because the children map the pa again
+    pamap_increment(pa);
+
+    // clear the PTE_W both parent and children
+    flags = ((PTE_FLAGS(*pte)) & (~PTE_W)) | PTE_COW;
+    *pte = (*pte & (~PTE_W)) | PTE_COW;
+    
+    // map the parent's page to the child(not alloc);
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      panic("uvmcopy(): can't not mapping the parent's PA");
     }
   }
   return 0;
-
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.
