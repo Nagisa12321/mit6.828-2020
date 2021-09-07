@@ -1,0 +1,1 @@
+because if there is only one thread, the race condition does not exist, so you can put/get if you like and never get wrong. but if there is more than one thread, if the  2 thread put in the same time, will miss one.
