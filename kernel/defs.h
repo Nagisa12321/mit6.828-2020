@@ -65,6 +65,7 @@ void            kfree(void *);
 void            kinit(void);
 void            pamap_increment(uint64);
 void            pamap_decrement(uint64);
+int             pamap_get(uint64);
 // log.c
 void            initlog(int, struct superblock*);
 void            log_write(struct buf*);

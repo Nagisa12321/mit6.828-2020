@@ -43,12 +43,7 @@ pagefault(pagetable_t pagetable, uint64 va) {
   uint64    old_pa;
   pte_t     *old_pte;
   uint      flags;
-  
-  // alloc a free page.
-  pa = kalloc();
-  if (pa == 0) {
-    return -1;
-  }
+  int       maps;
 
   // find the old PTE
   old_pte = walk(pagetable, va, 0);
@@ -61,8 +56,22 @@ pagefault(pagetable_t pagetable, uint64 va) {
   // make the old pte writeable
   *old_pte = ((*old_pte) | PTE_W) & (~PTE_COW);
 
-  // copy the mem from old pa to the pa.
   old_pa = PTE2PA(*old_pte);
+
+  // if the map count to the old page is 
+  // just 1. Then just use it.
+  maps = pamap_get(old_pa);
+  if (maps == 1) {
+    return 0;
+  }
+
+  // alloc a free page.
+  pa = kalloc();
+  if (pa == 0) {
+    return -1;
+  }
+
+  // copy the mem from old pa to the pa.
   memmove(pa, (char *)old_pa, PGSIZE);
 
   // free the old pa
