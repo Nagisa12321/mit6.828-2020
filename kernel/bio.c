@@ -23,33 +23,175 @@
 #include "fs.h"
 #include "buf.h"
 
-struct {
-  struct spinlock lock;
-  struct buf buf[NBUF];
+#define MAP_SIZE 13
 
-  // Linked list of all buffers, through prev/next.
-  // Sorted by how recently the buffer was used.
-  // head.next is most recent, head.prev is least.
-  struct buf head;
+struct bmap_entry {
+  struct bmap_entry *next;
+  struct buf *b;
+};
+
+struct blockmap {
+  struct spinlock locks[MAP_SIZE];
+  struct bmap_entry *tab[MAP_SIZE];  
+} bmap;
+
+// hash function
+uint hash(uint m, uint16 n) {
+  return m % MAP_SIZE;
+}
+
+/**
+ * remove a block from the bmap
+ * - should do kfree() with the buf/bmap_entry
+ */
+void bmap_remove(struct buf *b) {
+  struct bmap_entry   *entry, *cur;
+  uint                idx;
+  
+  idx = hash(b->blockno, b->dev);
+  acquire(&bmap.locks[idx]);
+  entry = bmap.tab[idx];
+  if (!entry) {
+    panic("bmap_remove(): nothing to remove");
+  } else {
+    cur = entry;
+    if (cur->b == b) {
+      bmap.tab[idx] = cur->next;
+      // free cur, and block
+      kfree(cur->b);
+      kfree(cur);
+
+      release(&bmap.locks[idx]);
+      return;
+    }
+    
+    // is it in the map?
+    // if in the map, just return
+    while (cur->next) {
+      if (cur->next->b == b) {
+        struct bmap_entry *tmp = cur->next;
+        cur->next = cur->next->next;
+        // free cur, and block
+        kfree(tmp->b);
+        kfree(tmp);
+
+        // just return
+        release(&bmap.locks[idx]);
+        return;
+      }
+      cur = cur->next;
+    }
+
+    // nothing to remove
+    panic("bmap_remove(): nothing to remove");
+  }
+  release(&bmap.locks[idx]);
+}
+
+/**
+ * put a block to the bmap
+ */
+void bmap_put(struct buf *b) {
+  struct bmap_entry   *entry, *cur;
+  uint                idx;
+
+  idx = hash(b->blockno, b->dev);
+  acquire(&bmap.locks[idx]);
+  entry = bmap.tab[idx];
+  if (!entry) {
+    
+    // if the slot is empty
+    // just alloc a free mem of bmap_entry
+    // and put it to the slot
+    cur = (struct bmap_entry *) kalloc();
+    cur->next = 0;
+    cur->b = b;
+    bmap.tab[idx] = cur;
+  } else {
+    cur = entry;
+    
+    // is it in the map?
+    // if in the map, just return
+    while (cur) {
+      if (cur->b == b) {
+        // just return
+        release(&bmap.locks[idx]);
+        return;
+      }
+      cur = cur->next;
+    }
+
+    // put it in the slot
+    cur = (struct bmap_entry *) kalloc();
+    cur->b = b;
+    cur->next = bmap.tab[idx];
+    bmap.tab[idx] = cur;
+  }
+  release(&bmap.locks[idx]);
+}
+
+/* 
+ * if contains, return the buf's address
+ * if not, return 0
+ */
+struct buf *bmap_get(uint dev, uint blockno) {
+  struct bmap_entry   *entry, *cur;
+  uint                idx;
+  
+  idx = hash(blockno, dev);
+
+  acquire(&bmap.locks[idx]);
+  entry = bmap.tab[idx];
+  if (!entry) {
+    release(&bmap.locks[idx]);
+    return 0;
+  }
+
+  // find in the list
+  cur = entry;
+  while (cur) {
+    if (cur->b->dev == dev && cur->b->blockno == blockno) {
+
+      // now add 1
+      // *can avoid the race condition*
+      cur->b->refcnt += 1;
+      release(&bmap.locks[idx]);
+
+      // acquire the sleep lock here
+      acquiresleep(&cur->b->lock);
+      return cur->b;
+    }
+    cur = cur->next;
+  }
+  release(&bmap.locks[idx]);
+  return 0;
+}
+
+struct bcache {
+  struct spinlock lock;
 } bcache;
 
 void
 binit(void)
 {
-  struct buf *b;
+  // block map init 
+  // init the lock 
+  for (int i = 0; i < MAP_SIZE; i++) {
+    initlock(&bmap.locks[i], "bcache.bmap_slot");
+  }
 
+  // set the mem just 0
+  memset(&bcache, 0, sizeof(struct bcache));
   initlock(&bcache.lock, "bcache");
 
-  // Create linked list of buffers
-  bcache.head.prev = &bcache.head;
-  bcache.head.next = &bcache.head;
-  for(b = bcache.buf; b < bcache.buf+NBUF; b++){
-    b->next = bcache.head.next;
-    b->prev = &bcache.head;
-    initsleeplock(&b->lock, "buffer");
-    bcache.head.next->prev = b;
-    bcache.head.next = b;
-  }
+}
+
+struct buf* alloc_block() {
+  struct buf *b = (struct buf*) kalloc();
+  memset(b, 0, sizeof(struct buf));
+  if (!b)
+    panic("alloc_block(): kalloc");
+  return b;
 }
 
 // Look through buffer cache for block on device dev.
@@ -58,34 +200,29 @@ binit(void)
 static struct buf*
 bget(uint dev, uint blockno)
 {
-  struct buf *b;
-
-  acquire(&bcache.lock);
-
+  struct buf *newbuf;
   // Is the block already cached?
-  for(b = bcache.head.next; b != &bcache.head; b = b->next){
-    if(b->dev == dev && b->blockno == blockno){
-      b->refcnt++;
-      release(&bcache.lock);
-      acquiresleep(&b->lock);
-      return b;
-    }
+  // if in the chache, just return.
+  newbuf = bmap_get(dev, blockno);
+  if (newbuf) {
+    return newbuf;
   }
 
   // Not cached.
   // Recycle the least recently used (LRU) unused buffer.
-  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
-    if(b->refcnt == 0) {
-      b->dev = dev;
-      b->blockno = blockno;
-      b->valid = 0;
-      b->refcnt = 1;
-      release(&bcache.lock);
-      acquiresleep(&b->lock);
-      return b;
-    }
-  }
-  panic("bget: no buffers");
+  // acquire(&bcache.lock);
+  
+  // make a new buffer
+  newbuf = alloc_block();
+  newbuf->dev = dev;
+  newbuf->blockno = blockno;
+  newbuf->valid = 0;
+  newbuf->refcnt = 1;
+
+  // newbuf should be add to the bmap
+  bmap_put(newbuf);
+  acquiresleep(&newbuf->lock);
+  return newbuf;
 }
 
 // Return a locked buf with the contents of the indicated block.
@@ -121,19 +258,11 @@ brelse(struct buf *b)
 
   releasesleep(&b->lock);
 
-  acquire(&bcache.lock);
   b->refcnt--;
   if (b->refcnt == 0) {
-    // no one is waiting for it.
-    b->next->prev = b->prev;
-    b->prev->next = b->next;
-    b->next = bcache.head.next;
-    b->prev = &bcache.head;
-    bcache.head.next->prev = b;
-    bcache.head.next = b;
+    // remove in the bmap
+    bmap_remove(b);
   }
-  
-  release(&bcache.lock);
 }
 
 void
