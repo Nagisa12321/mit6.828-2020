@@ -9,7 +9,7 @@
 #include "defs.h"
 
 #ifdef LAB_LOCK
-#define NLOCK 500
+#define NLOCK 50000
 
 static struct spinlock *locks[NLOCK];
 struct spinlock lock_locks;
@@ -47,6 +47,7 @@ void
 initlock(struct spinlock *lk, char *name)
 {
   lk->name = name;
+  // strncpy(lk->name, name, strlen(name));
   lk->locked = 0;
   lk->cpu = 0;
 #ifdef LAB_LOCK
