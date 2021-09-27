@@ -1,7 +1,7 @@
 # MIT 6.S081 Introduction to Operating Systems Fall 2020
 
 ## progress
-
+- link: https://mit-public-courses-cn-translatio.gitbook.io/mit6-s081/
 - [x] [Lab util: Unix utilities](https://github.com/Nagisa12321/mit6.828-2020/tree/util)
 - [x] [Lab syscall: System calls](https://github.com/Nagisa12321/mit6.828-2020/tree/syscall)
 - [X] [Lab pgtbl: Page tables](https://github.com/Nagisa12321/mit6.828-2020/tree/pgtbl)
