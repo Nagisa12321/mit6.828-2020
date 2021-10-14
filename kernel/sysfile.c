@@ -286,7 +286,7 @@ create(char *path, short type, short major, short minor)
 uint64
 sys_open(void)
 {
-  char path[MAXPATH];
+  char path[MAXPATH], tmp[MAXPATH];
   int fd, omode;
   struct file *f;
   struct inode *ip;
@@ -296,6 +296,14 @@ sys_open(void)
     return -1;
 
   begin_op();
+
+  if (!(omode & O_CREATE) && !(omode & O_NOFOLLOW)) {
+    strncpy(tmp, path, strlen(path));
+    if (symlink_open(path, 0) == -1) {
+      end_op();
+      return -1;
+    }
+  }
 
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
@@ -483,4 +491,15 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+uint64
+sys_symlink(void) {
+  // printf("sys_symlink!\n");
+
+  char target[MAXPATH];
+  char path[MAXPATH];
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+  return symlink(target, path);
 }

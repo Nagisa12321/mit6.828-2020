@@ -720,3 +720,79 @@ nameiparent(char *path, char *name)
 {
   return namex(path, 1, name);
 }
+
+int symlink_open(char *path, int deep) {
+  struct inode *ip;
+  struct buf *bp;
+  if (deep > 10)
+    return -1;
+  if((ip = namei(path)) == 0)
+    return -1;
+  ilock(ip);
+  if (ip->type == T_SYMLINK) {
+    bp = bread(ip->dev, bmap(ip, 0));
+    strncpy(path, (char *)bp->data, strlen((char *)bp->data));
+    brelse(bp);
+
+    iunlockput(ip);
+    return symlink_open(path, deep + 1);
+  }
+  iunlockput(ip);
+  return 0;
+}
+
+int symlink(char *target, char *path) {
+  // printf("symlink(%s, %s)!\n", target, path);
+
+  struct inode *ip;
+  struct inode *dp;   // inode of parent
+  char name[DIRSIZ];  // name of parent
+  struct buf *bp;
+
+  begin_op();
+
+  if((dp = nameiparent(path, name)) == 0) {
+    end_op();
+    return -1;
+  }
+
+  ilock(dp);
+
+  if((ip = dirlookup(dp, name, 0)) != 0){
+    iunlockput(dp);
+    ilock(ip);
+    if(ip->type == T_SYMLINK) {
+      iunlockput(ip);
+      end_op();
+      return 0;
+    }
+
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  if((ip = ialloc(dp->dev, T_SYMLINK)) == 0)
+    panic("create: ialloc");
+
+  ilock(ip);
+  ip->nlink = 1;
+
+  // link the target
+  if(dirlink(dp, name, ip->inum) < 0)
+    panic("create: dirlink");
+  iunlockput(dp);
+
+  // write the path to the block
+  // use bmap to get the No.0 block 
+  // of this symblink inode
+  // bread will return it's buff
+  bp = bread(ip->dev, bmap(ip, 0));
+  strncpy((char *)bp->data, target, strlen(target));
+  brelse(bp);
+
+  iupdate(ip);
+  iunlockput(ip);
+  end_op();
+  return 0;
+}
